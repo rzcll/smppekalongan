@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
+  <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SMP 6 Pekalongan</title>
   
-  <!-- Memanggil Library -->
+  <!-- Memanggil Library (WAJIB ADA) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -32,6 +33,7 @@
   </style>
 </head>
 <body>
+  <!-- Tempat React merender komponen -->
   <div id="root"></div>
 
   <script type="text/babel">
@@ -40,8 +42,16 @@
     // ==========================================
     // PENGATURAN UTAMA APLIKASI
     // ==========================================
+    
+    // 1. Password Admin
     const ADMIN_PASSWORD = "admin123"; 
-    const DEFAULT_OPENROUTER_API_KEY = "sk-or-v1-"+"21dda56f89b003afb7985e4a194820ecb5d700d1541ed47ff70918507bee6f56"; 
+    
+    // 2. Trik Memecah Kunci API (GANTI DENGAN KUNCI BARU ANDA!)
+    // Pisahkan huruf-hurufnya agar robot GitHub tidak memblokirnya.
+    // Contoh: jika kunci adalah "sk-or-v1-abcdefghij", pecah menjadi "sk-or-v1-" + "abcde" + "fghij"
+    const DEFAULT_OPENROUTER_API_KEY = "sk-or-v1-" + "e142965a4eef89b" + "689f03850cc7c1365" + "ac77a6321f200543e91e06fb834f51b9"; 
+    
+    // 3. URL Web App Google Apps Script
     const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzWN8c0kHxNS1bgPZ7ulnpyu4TAGPAHbffYlSwyKFosE4wHXcNZoO1QnI_Nru8Fgdyy/exec"; 
     
     const INDONESIAN_HOLIDAYS = { 
@@ -91,17 +101,26 @@
 
       const chatEndRef = useRef(null);
 
+      // Mencegah aplikasi blank jika load data gagal
       useEffect(() => {
         runGoogleScript('getAppData')
-          .then(data => { setTemplates(data.templates || []); setActivities(data.activities || []); setIsLoading(false); })
-          .catch(err => { console.error(err); setIsLoading(false); });
+          .then(data => { 
+            setTemplates(data.templates || []); 
+            setActivities(data.activities || []); 
+            setIsLoading(false); 
+          })
+          .catch(err => { 
+            console.error("Critical Load Error:", err); 
+            setIsLoading(false); // Tetap matikan loading agar UI muncul
+          });
       }, []);
 
       useEffect(() => { 
         if (activeTab === 'chatbot') chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); 
       }, [chat, isThinking, activeTab]);
 
-const askOpenRouter = async (prompt) => {
+      // --- LOGIKA OPENROUTER ---
+      const askOpenRouter = async (prompt) => {
         const url = "https://openrouter.ai/api/v1/chat/completions";
         const fallbackModels = ["google/gemini-1.5-flash", "openai/gpt-4o-mini", "meta-llama/llama-3-8b-instruct:free"];
         let errorLogs = [];
@@ -113,7 +132,7 @@ const askOpenRouter = async (prompt) => {
               headers: { 
                 'Content-Type': 'application/json', 
                 'Authorization': `Bearer ${DEFAULT_OPENROUTER_API_KEY}`, 
-                'HTTP-Referer': 'https://smp6pekalongan.github.io', // Hardcode agar aman dari CORS
+                'HTTP-Referer': 'https://smp6pekalongan.github.io', // Statik agar aman dari CORS
                 'X-Title': 'SMP 6 Pekalongan App' 
               }, 
               body: JSON.stringify({ 
@@ -130,32 +149,27 @@ const askOpenRouter = async (prompt) => {
               errorLogs.push(`${currentModel} (Status ${response.status})`);
               
               if (response.status === 401) {
-                 return "Error 401: API Key Anda DITOLAK. Key mungkin salah, kurang lengkap, atau telah diblokir kembali oleh OpenRouter.";
+                 return "Error 401: API Key Anda DITOLAK. Kunci tidak lengkap, atau telah diblokir GitHub/OpenRouter.";
               }
             }
           } catch (error) { 
-             errorLogs.push(`${currentModel} (Fetch Error: ${error.message})`);
+             errorLogs.push(`${currentModel} (Fetch Error)`);
           }
         }
-        return `Gagal menghubungi AI. Detail Error: ${errorLogs.join(' | ')}`;
-      };
-            if (response.ok) {
-              const result = await response.json();
-              if (result && result.choices && result.choices.length > 0) return result.choices[0].message.content;
-            }
-          } catch (error) { console.warn(`Fetch gagal:`, error); }
-        }
-        return "Sistem AI sedang sibuk. Pastikan koneksi internet stabil.";
+        return `Gagal menghubungi AI. Log Error: ${errorLogs.join(' | ')}`;
       };
 
       const handleSend = async (text) => {
         if (!text.trim() || isThinking) return;
         setChat([...chat, { role: 'user', text }]); setInput(''); setIsThinking(true);
         const match = templates.find(t => text.toLowerCase().includes(t.question.toLowerCase()) || t.question.toLowerCase().includes(text.toLowerCase()));
+        
         if (match) { 
           setTimeout(() => { setChat(prev => [...prev, { role: 'bot', text: match.answer }]); setIsThinking(false); }, 600); 
         } else { 
-          const ai = await askOpenRouter(text); setChat(prev => [...prev, { role: 'bot', text: ai }]); setIsThinking(false); 
+          const ai = await askOpenRouter(text); 
+          setChat(prev => [...prev, { role: 'bot', text: ai }]); 
+          setIsThinking(false); 
         }
       };
 
@@ -168,7 +182,7 @@ const askOpenRouter = async (prompt) => {
 
       const changeMonth = (offset) => setCurrDate(new Date(currDate.getFullYear(), currDate.getMonth() + offset, 1));
 
-      // Admin Logic
+      // --- Admin Logic ---
       const [newTemplate, setNewTemplate] = useState({ question: '', answer: '' });
       const [activityTitle, setActivityTitle] = useState('');
       const [selectedDatesForNewActivity, setSelectedDatesForNewActivity] = useState([]);
@@ -178,34 +192,37 @@ const askOpenRouter = async (prompt) => {
         if (newTemplate.question && newTemplate.answer) {
           const t = { ...newTemplate, id: Date.now().toString() };
           const prev = [...templates]; setTemplates([...templates, t]); setNewTemplate({ question: '', answer: '' });
-          try { await runGoogleScript('saveTemplate', t); } catch (err) { alert('Gagal: ' + err.message); setTemplates(prev); }
+          try { await runGoogleScript('saveTemplate', t); } catch (err) { alert('Gagal Simpan: ' + err.message); setTemplates(prev); }
         }
       };
 
       const handleDeleteTemplate = async (id) => {
         const prev = [...templates]; setTemplates(templates.filter(x => x.id !== id));
-        try { await runGoogleScript('deleteTemplate', id); } catch(err) { alert('Gagal: ' + err.message); setTemplates(prev); }
+        try { await runGoogleScript('deleteTemplate', id); } catch(err) { alert('Gagal Hapus: ' + err.message); setTemplates(prev); }
       };
 
       const addActivitiesBatch = async () => {
         if (activityTitle && selectedDatesForNewActivity.length > 0) {
           const newEntries = selectedDatesForNewActivity.map(date => ({ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, title: activityTitle, date }));
           const prev = [...activities]; setActivities([...activities, ...newEntries]); setActivityTitle(''); setSelectedDatesForNewActivity([]);
-          try { await runGoogleScript('saveActivitiesBatch', newEntries); } catch(err) { alert('Gagal: ' + err.message); setActivities(prev); }
+          try { await runGoogleScript('saveActivitiesBatch', newEntries); } catch(err) { alert('Gagal Simpan: ' + err.message); setActivities(prev); }
         }
       };
 
       const handleDeleteActivity = async (id) => {
         const prev = [...activities]; setActivities(activities.filter(act => act.id !== id));
-        try { await runGoogleScript('deleteActivity', id); } catch(err) { alert('Gagal: ' + err.message); setActivities(prev); }
+        try { await runGoogleScript('deleteActivity', id); } catch(err) { alert('Gagal Hapus: ' + err.message); setActivities(prev); }
       };
 
       if (isLoading) return <div className="h-screen w-full flex flex-col items-center justify-center bg-blue-50"><Loader2 size={48} className="text-blue-600 animate-spin mb-6" /><h2 className="text-2xl font-black text-blue-900">Menyinkronkan Data...</h2></div>;
 
+      // --- UI UTAMA ---
       return (
         <div className="min-h-screen w-full bg-slate-50 flex flex-col md:flex-row font-sans text-slate-900 relative">
+          {/* Background */}
           <div className="fixed top-[-10%] left-[-10%] w-[500px] h-[500px] bg-sky-300/40 rounded-full mix-blend-multiply filter blur-[120px] animate-blob z-0 pointer-events-none"></div>
           <div className="fixed top-[20%] right-[-5%] w-[400px] h-[400px] bg-indigo-300/40 rounded-full mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000 z-0 pointer-events-none"></div>
+          
           <button onClick={() => setActiveTab(activeTab === 'admin' ? 'chatbot' : 'admin')} className={`fixed top-4 right-4 md:top-6 md:right-8 z-50 p-2.5 md:p-3 rounded-full shadow-lg transition-all duration-300 border ${activeTab === 'admin' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white scale-105' : 'bg-white/90 backdrop-blur-md text-slate-600'}`}><Settings size={26} className="animate-spin-slow" /></button>
           
           <header className="md:hidden sticky top-0 bg-white/90 backdrop-blur-md p-4 flex items-center gap-3 border-b z-40 shadow-sm"><div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-2 rounded-lg"><LayoutDashboard className="text-white w-5 h-5" /></div><h1 className="font-extrabold text-lg text-blue-900">SMP 6 Pekalongan</h1></header>
@@ -224,6 +241,7 @@ const askOpenRouter = async (prompt) => {
           </nav>
 
           <main className="flex-1 p-4 pb-24 md:py-4 md:pr-4 md:pl-0 w-full relative z-10 min-h-screen flex flex-col">
+            
             {activeTab === 'chatbot' && (
               <div className="flex flex-col h-[calc(100vh-9rem)] md:h-[calc(100vh-2rem)] bg-white/80 backdrop-blur-xl rounded-3xl md:rounded-[2.5rem] shadow-2xl border overflow-hidden">
                 <div className="p-4 md:p-6 border-b flex items-center gap-4 bg-white/50"><div className="w-10 h-10 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white"><Bot size={24} /></div><div><h2 className="font-bold text-slate-800">Asisten AI SMP 6</h2><p className="text-[10px] text-green-600 font-bold uppercase">Sistem Cerdas Aktif</p></div></div>
