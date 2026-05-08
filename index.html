@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SMP 6 Pekalongan</title>
+  
+  <!-- Memanggil Library -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  
+  <style>
+    body { margin: 0; background-color: #f8fafc; overflow-x: hidden; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+    @keyframes spin-slow { 100% { transform: rotate(360deg); } }
+    .animate-spin-slow { animation: spin-slow 5s linear infinite; }
+    @keyframes blob {
+      0% { transform: translate(0px, 0px) scale(1); }
+      33% { transform: translate(30px, -50px) scale(1.1); }
+      66% { transform: translate(-20px, 20px) scale(0.9); }
+      100% { transform: translate(0px, 0px) scale(1); }
+    }
+    .animate-blob { animation: blob 10s infinite; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // ==========================================
+    // PENGATURAN UTAMA APLIKASI
+    // ==========================================
+    const ADMIN_PASSWORD = "admin123"; 
+    const DEFAULT_OPENROUTER_API_KEY = "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"; 
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzWN8c0kHxNS1bgPZ7ulnpyu4TAGPAHbffYlSwyKFosE4wHXcNZoO1QnI_Nru8Fgdyy/exec"; 
+    
+    const INDONESIAN_HOLIDAYS = { 
+        '01-01': 'Tahun Baru Masehi', '05-01': 'Hari Buruh Internasional', '06-01': 'Hari Lahir Pancasila', 
+        '08-17': 'Hari Kemerdekaan RI', '12-25': 'Hari Raya Natal', '2026-02-17': 'Tahun Baru Imlek', 
+        '2026-03-19': 'Hari Suci Nyepi', '2026-03-20': 'Hari Raya Idul Fitri', '2026-03-21': 'Hari Raya Idul Fitri', 
+        '2026-04-03': 'Wafat Yesus Kristus', '2026-05-14': 'Kenaikan Yesus Kristus', '2026-05-27': 'Hari Raya Idul Adha', 
+        '2026-06-16': 'Tahun Baru Islam', '2026-08-26': 'Maulid Nabi Muhammad SAW', 
+    };
+
+    // --- SETUP ICONS ---
+    const createIcon = (iconName) => ({ size, className = "" }) => <i className={`ph ${iconName} ${className}`} style={{ fontSize: size || 'inherit' }}></i>;
+    const MessageSquare = createIcon('ph-chat-circle'), CalendarIcon = createIcon('ph-calendar-blank'), Settings = createIcon('ph-gear'), Plus = createIcon('ph-plus'), Trash2 = createIcon('ph-trash'), Send = createIcon('ph-paper-plane-right'), ChevronLeft = createIcon('ph-caret-left'), ChevronRight = createIcon('ph-caret-right'), Bot = createIcon('ph-robot'), LayoutDashboard = createIcon('ph-squares-four'), X = createIcon('ph-x'), Loader2 = createIcon('ph-spinner'), Sparkles = createIcon('ph-sparkle'), Lock = createIcon('ph-lock'), ShieldCheck = createIcon('ph-shield-check'), LogOut = createIcon('ph-sign-out'), List = createIcon('ph-list-bullets');
+
+    // --- SINKRONISASI DATA KE GOOGLE SCRIPT ---
+    const runGoogleScript = async (serverFunction, data = null) => {
+      try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          redirect: 'follow',
+          body: JSON.stringify({ action: serverFunction, payload: data })
+        });
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const result = await response.json();
+        if (result.error) throw new Error(result.error);
+        return result;
+      } catch (error) {
+        console.error("Gagal terhubung ke Google Sheet:", error);
+        if (serverFunction === 'getAppData') return { templates: [], activities: [] };
+        throw error;
+      }
+    };
+
+    const App = () => {
+      const [isLoading, setIsLoading] = useState(true);
+      const [templates, setTemplates] = useState([]);
+      const [activities, setActivities] = useState([]);
+      const [activeTab, setActiveTab] = useState('chatbot');
+      const [isAdmin, setIsAdmin] = useState(false);
+      const [pass, setPass] = useState("");
+      const [chat, setChat] = useState([{ role: 'bot', text: 'Halo! Saya asisten digital SMP 6 Pekalongan. Ada yang bisa saya bantu hari ini?' }]);
+      const [input, setInput] = useState('');
+      const [isThinking, setIsThinking] = useState(false);
+      const [currDate, setCurrDate] = useState(new Date());
+      const [selDate, setSelDate] = useState(new Date().toISOString().split('T')[0]);
+
+      const chatEndRef = useRef(null);
+
+      useEffect(() => {
+        runGoogleScript('getAppData')
+          .then(data => { setTemplates(data.templates || []); setActivities(data.activities || []); setIsLoading(false); })
+          .catch(err => { console.error(err); setIsLoading(false); });
+      }, []);
+
+      useEffect(() => { 
+        if (activeTab === 'chatbot') chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); 
+      }, [chat, isThinking, activeTab]);
+
+      const askOpenRouter = async (prompt) => {
+        const url = "https://openrouter.ai/api/v1/chat/completions";
+        const fallbackModels = ["google/gemini-1.5-flash", "openai/gpt-4o-mini", "meta-llama/llama-3-8b-instruct:free"];
+        for (let currentModel of fallbackModels) {
+          try {
+            const response = await fetch(url, { 
+              method: 'POST', 
+              headers: { 
+                'Content-Type': 'application/json', 
+                'Authorization': `Bearer ${DEFAULT_OPENROUTER_API_KEY}`, 
+                'HTTP-Referer': window.location.href, 
+                'X-Title': 'SMP 6 Pekalongan App' 
+              }, 
+              body: JSON.stringify({ 
+                model: currentModel, 
+                messages: [{ role: "system", content: "Anda asisten SMP 6 Pekalongan. Jawab sopan dan logis." }, { role: "user", content: prompt }] 
+              }) 
+            });
+            if (response.ok) {
+              const result = await response.json();
+              if (result && result.choices && result.choices.length > 0) return result.choices[0].message.content;
+            }
+          } catch (error) { console.warn(`Fetch gagal:`, error); }
+        }
+        return "Sistem AI sedang sibuk. Pastikan koneksi internet stabil.";
+      };
+
+      const handleSend = async (text) => {
+        if (!text.trim() || isThinking) return;
+        setChat([...chat, { role: 'user', text }]); setInput(''); setIsThinking(true);
+        const match = templates.find(t => text.toLowerCase().includes(t.question.toLowerCase()) || t.question.toLowerCase().includes(text.toLowerCase()));
+        if (match) { 
+          setTimeout(() => { setChat(prev => [...prev, { role: 'bot', text: match.answer }]); setIsThinking(false); }, 600); 
+        } else { 
+          const ai = await askOpenRouter(text); setChat(prev => [...prev, { role: 'bot', text: ai }]); setIsThinking(false); 
+        }
+      };
+
+      const calendarDays = useMemo(() => {
+        const year = currDate.getFullYear(), month = currDate.getMonth(), days = new Date(year, month + 1, 0).getDate(), first = new Date(year, month, 1).getDay(), arr = [];
+        for (let i = 0; i < first; i++) arr.push(null);
+        for (let i = 1; i <= days; i++) arr.push(`${year}-${String(month+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`);
+        return arr;
+      }, [currDate]);
+
+      const changeMonth = (offset) => setCurrDate(new Date(currDate.getFullYear(), currDate.getMonth() + offset, 1));
+
+      // Admin Logic
+      const [newTemplate, setNewTemplate] = useState({ question: '', answer: '' });
+      const [activityTitle, setActivityTitle] = useState('');
+      const [selectedDatesForNewActivity, setSelectedDatesForNewActivity] = useState([]);
+      const [tempDate, setTempDate] = useState(new Date().toISOString().split('T')[0]);
+
+      const addTemplate = async () => {
+        if (newTemplate.question && newTemplate.answer) {
+          const t = { ...newTemplate, id: Date.now().toString() };
+          const prev = [...templates]; setTemplates([...templates, t]); setNewTemplate({ question: '', answer: '' });
+          try { await runGoogleScript('saveTemplate', t); } catch (err) { alert('Gagal: ' + err.message); setTemplates(prev); }
+        }
+      };
+
+      const handleDeleteTemplate = async (id) => {
+        const prev = [...templates]; setTemplates(templates.filter(x => x.id !== id));
+        try { await runGoogleScript('deleteTemplate', id); } catch(err) { alert('Gagal: ' + err.message); setTemplates(prev); }
+      };
+
+      const addActivitiesBatch = async () => {
+        if (activityTitle && selectedDatesForNewActivity.length > 0) {
+          const newEntries = selectedDatesForNewActivity.map(date => ({ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, title: activityTitle, date }));
+          const prev = [...activities]; setActivities([...activities, ...newEntries]); setActivityTitle(''); setSelectedDatesForNewActivity([]);
+          try { await runGoogleScript('saveActivitiesBatch', newEntries); } catch(err) { alert('Gagal: ' + err.message); setActivities(prev); }
+        }
+      };
+
+      const handleDeleteActivity = async (id) => {
+        const prev = [...activities]; setActivities(activities.filter(act => act.id !== id));
+        try { await runGoogleScript('deleteActivity', id); } catch(err) { alert('Gagal: ' + err.message); setActivities(prev); }
+      };
+
+      if (isLoading) return <div className="h-screen w-full flex flex-col items-center justify-center bg-blue-50"><Loader2 size={48} className="text-blue-600 animate-spin mb-6" /><h2 className="text-2xl font-black text-blue-900">Menyinkronkan Data...</h2></div>;
+
+      return (
+        <div className="min-h-screen w-full bg-slate-50 flex flex-col md:flex-row font-sans text-slate-900 relative">
+          <div className="fixed top-[-10%] left-[-10%] w-[500px] h-[500px] bg-sky-300/40 rounded-full mix-blend-multiply filter blur-[120px] animate-blob z-0 pointer-events-none"></div>
+          <div className="fixed top-[20%] right-[-5%] w-[400px] h-[400px] bg-indigo-300/40 rounded-full mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000 z-0 pointer-events-none"></div>
+          <button onClick={() => setActiveTab(activeTab === 'admin' ? 'chatbot' : 'admin')} className={`fixed top-4 right-4 md:top-6 md:right-8 z-50 p-2.5 md:p-3 rounded-full shadow-lg transition-all duration-300 border ${activeTab === 'admin' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white scale-105' : 'bg-white/90 backdrop-blur-md text-slate-600'}`}><Settings size={26} className="animate-spin-slow" /></button>
+          
+          <header className="md:hidden sticky top-0 bg-white/90 backdrop-blur-md p-4 flex items-center gap-3 border-b z-40 shadow-sm"><div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-2 rounded-lg"><LayoutDashboard className="text-white w-5 h-5" /></div><h1 className="font-extrabold text-lg text-blue-900">SMP 6 Pekalongan</h1></header>
+          
+          <nav className="fixed bottom-0 left-0 w-full md:sticky md:top-4 md:w-[320px] md:h-[calc(100vh-2rem)] md:m-4 md:rounded-[2.5rem] bg-white/80 backdrop-blur-xl border-t md:border p-2 md:p-6 flex flex-row md:flex-col gap-1 z-30 shadow-2xl pb-safe">
+            <div className="hidden md:flex items-center gap-4 mb-10"><div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-3.5 rounded-2xl"><LayoutDashboard className="text-white w-6 h-6" /></div><div><h1 className="font-black text-xl">SMP 6 <br/>Pekalongan</h1><p className="text-[10px] font-black text-blue-500 uppercase mt-1">Sistem Cerdas</p></div></div>
+            <div className="flex flex-row md:flex-col w-full gap-1 md:gap-3">
+              {[ { id: 'chatbot', label: 'CS Digital', icon: MessageSquare }, { id: 'activity', label: 'Kalender', icon: CalendarIcon } ].map((item) => (
+                <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 flex-1 md:flex-none p-2 md:px-5 md:py-4 rounded-xl md:rounded-2xl transition-all ${activeTab === item.id ? 'text-blue-600 md:bg-blue-600 md:text-white md:shadow-xl md:translate-x-2' : 'text-slate-400 hover:text-blue-600'}`}>
+                  <item.icon size={22} className={`${activeTab === item.id && 'md:text-white text-blue-600'}`} />
+                  <span className="text-[10px] md:text-sm font-bold">{item.label}</span>
+                </button>
+              ))}
+            </div>
+            {isAdmin && <button onClick={()=>{setIsAdmin(false);setActiveTab('chatbot')}} className="hidden md:block mt-auto text-xs font-bold text-red-500 bg-red-50 p-3 rounded-xl">Keluar Akses Admin</button>}
+          </nav>
+
+          <main className="flex-1 p-4 pb-24 md:py-4 md:pr-4 md:pl-0 w-full relative z-10 min-h-screen flex flex-col">
+            {activeTab === 'chatbot' && (
+              <div className="flex flex-col h-[calc(100vh-9rem)] md:h-[calc(100vh-2rem)] bg-white/80 backdrop-blur-xl rounded-3xl md:rounded-[2.5rem] shadow-2xl border overflow-hidden">
+                <div className="p-4 md:p-6 border-b flex items-center gap-4 bg-white/50"><div className="w-10 h-10 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white"><Bot size={24} /></div><div><h2 className="font-bold text-slate-800">Asisten AI SMP 6</h2><p className="text-[10px] text-green-600 font-bold uppercase">Sistem Cerdas Aktif</p></div></div>
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-5 bg-gradient-to-b from-slate-50/50 to-blue-50/30 custom-scrollbar">
+                  {chat.map((c, i) => (<div key={i} className={`flex ${c.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] md:max-w-[70%] p-4 md:p-5 rounded-3xl text-sm md:text-base shadow-sm ${c.role === 'user' ? 'bg-green-100 text-green-900 rounded-tr-none' : 'bg-white text-slate-700 rounded-tl-none border'}`}>{c.text}</div></div>))}
+                  {isThinking && <div className="flex justify-start"><div className="bg-white p-5 rounded-3xl rounded-tl-none flex items-center gap-3"><div className="flex space-x-1.5"><div className="w-2.5 h-2.5 bg-blue-400 rounded-full animate-bounce"></div><div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce delay-75"></div><div className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce delay-150"></div></div></div></div>}
+                  <div ref={chatEndRef} className="h-4" />
+                </div>
+                <div className="p-4 md:p-6 border-t bg-white/80">
+                  <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar">{templates.slice(0,4).map(t=><button key={t.id} onClick={()=>handleSend(t.question)} className="flex-shrink-0 text-[10px] md:text-xs font-bold bg-white text-slate-600 px-4 py-2.5 rounded-xl border">{t.question}</button>)}</div>
+                  <div className="relative flex items-center"><input type="text" value={input} onChange={(e)=>setInput(e.target.value)} onKeyPress={(e)=>e.key==='Enter'&&handleSend(input)} placeholder="Ketik pertanyaan..." className="w-full bg-slate-50/50 border rounded-2xl pl-6 pr-16 py-4 outline-none focus:ring-4 focus:ring-blue-100/50 text-sm md:text-base" /><button onClick={()=>handleSend(input)} className="absolute right-2 bg-blue-600 text-white w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center"><Send size={18} /></button></div>
+                </div>
+              </div>
+            )}
+            
+            {activeTab === 'activity' && (
+              <div className="flex flex-col xl:flex-row gap-6 md:gap-8 w-full">
+                <div className="flex-1 bg-white/80 backdrop-blur-xl p-5 md:p-10 rounded-3xl md:rounded-[2.5rem] shadow-2xl border"><div className="flex items-center justify-between mb-8"><h2 className="text-xl md:text-3xl font-black uppercase">{currDate.toLocaleString('id-ID', { month: 'long', year: 'numeric' })}</h2><div className="flex gap-2"><button onClick={()=>changeMonth(-1)} className="p-2 bg-slate-50 rounded-xl"><ChevronLeft size={20}/></button><button onClick={()=>changeMonth(1)} className="p-2 bg-slate-50 rounded-xl"><ChevronRight size={20}/></button></div></div><div className="grid grid-cols-7 gap-2 mb-4">{['Min','Sen','Sel','Rab','Kam','Jum','Sab'].map((d,i)=><div key={d} className={`text-xs font-black uppercase ${i===0?'text-red-500':'text-slate-400'} text-center`}>{d}</div>)}</div><div className="grid grid-cols-7 gap-2">{calendarDays.map((day,i)=>{if(!day)return <div key={i}></div>;const isSelected=selDate===day,isToday=day===new Date().toISOString().split('T')[0],hasAct=activities.some(a=>a.date===day);return <button key={i} onClick={()=>setSelDate(day)} className={`aspect-square rounded-full border-2 font-bold transition-all ${isSelected?'bg-blue-600 border-blue-600 text-white scale-110 shadow-lg':isToday?'bg-green-500 text-white':hasAct?'border-blue-500 text-blue-600':'border-transparent hover:border-blue-200'}`}>{day.split('-')[2].replace(/^0+/,'')}</button>})}</div></div>
+                <div className="w-full xl:w-96 bg-white/80 backdrop-blur-xl p-5 md:p-8 rounded-3xl shadow-2xl border xl:sticky xl:top-4 h-auto xl:max-h-[calc(100vh-2rem)] flex flex-col"><h3 className="font-bold text-lg mb-6 flex items-center gap-3"><div className="bg-blue-100 p-2.5 rounded-xl text-blue-600"><CalendarIcon size={20}/></div>{new Date(selDate).toLocaleDateString('id-ID',{day:'numeric',month:'long'})}</h3><div className="space-y-4 overflow-y-auto custom-scrollbar flex-1">{activities.filter(a=>a.date===selDate).map((a,idx)=><div key={a.id} className="p-4 bg-white border rounded-2xl text-sm font-bold flex items-center gap-4"><div className="w-1.5 h-8 bg-blue-500 rounded-full"></div>{a.title}</div>)}{activities.filter(a=>a.date===selDate).length===0&&<p className="text-center py-16 text-slate-400 text-sm italic">Tidak ada agenda.</p>}</div></div>
+              </div>
+            )}
+            
+            {activeTab === 'admin' && (
+              <div className="w-full min-h-[calc(100vh-2rem)] flex flex-col">
+                {!isAdmin ? (
+                  <div className="flex-1 flex items-center justify-center pb-20 md:pb-0"><div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-2xl text-center"><div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center text-blue-600 mx-auto mb-8"><Lock size={36}/></div><h2 className="text-2xl font-black mb-2">Keamanan Sistem</h2><form onSubmit={(e)=>{e.preventDefault();if(pass===ADMIN_PASSWORD)setIsAdmin(true);else alert('Sandi Salah');}} className="space-y-5 mt-8"><input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="Sandi..." className="w-full bg-slate-50 border rounded-2xl p-4 text-center font-bold outline-none"/><button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black">MASUK</button></form></div></div>
+                ) : (
+                  <div className="space-y-6"><div className="grid grid-cols-1 lg:grid-cols-2 gap-6"><div className="bg-white p-6 md:p-10 rounded-3xl shadow-2xl"><h3 className="font-bold mb-6 flex items-center gap-3"><div className="bg-blue-50 p-2.5 rounded-xl text-blue-600"><Plus size={22}/></div>Input Jadwal</h3><input type="text" placeholder="Kegiatan..." value={activityTitle} onChange={e=>setActivityTitle(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl outline-none mb-4"/><div className="flex gap-3"><input type="date" value={tempDate} onChange={e=>setTempDate(e.target.value)} className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none"/><button onClick={()=>{if(tempDate&&!selectedDatesForNewActivity.includes(tempDate))setSelectedDatesForNewActivity([...selectedDatesForNewActivity,tempDate].sort());}} className="bg-blue-50 text-blue-700 px-6 rounded-2xl font-bold">TAMBAH</button></div><div className="flex flex-wrap gap-2 mt-4">{selectedDatesForNewActivity.map(d=><div key={d} className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-xl text-xs font-bold flex gap-2">{d}<X size={14} className="cursor-pointer text-slate-400" onClick={()=>setSelectedDatesForNewActivity(selectedDatesForNewActivity.filter(x=>x!==d))}/></div>)}</div><button onClick={addActivitiesBatch} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black mt-6">SIMPAN JADWAL</button></div><div className="bg-white p-6 md:p-10 rounded-3xl shadow-2xl h-[500px] flex flex-col"><h3 className="font-bold mb-6 flex items-center gap-3"><div className="bg-indigo-50 p-2.5 rounded-xl text-indigo-600"><Bot size={22}/></div>Database Chatbot</h3><div className="flex gap-4 mb-4"><input type="text" placeholder="Tanya..." value={newTemplate.question} onChange={e=>setNewTemplate({...newTemplate,question:e.target.value})} className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none"/><input type="text" placeholder="Jawab..." value={newTemplate.answer} onChange={e=>setNewTemplate({...newTemplate,answer:e.target.value})} className="flex-1 bg-slate-50 p-4 rounded-2xl outline-none"/></div><button onClick={addTemplate} className="w-full bg-slate-800 text-white p-4 rounded-2xl font-black mb-6">SIMPAN FAQ</button><div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">{templates.map(t=><div key={t.id} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl"><div className="pr-4 border-l-4 border-indigo-400 pl-3"><span className="text-xs font-black block">{t.question}</span><span className="text-xs text-slate-500">{t.answer}</span></div><Trash2 size={18} className="text-red-400 cursor-pointer" onClick={()=>handleDeleteTemplate(t.id)}/></div>)}</div></div></div></div>
+                )}
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
