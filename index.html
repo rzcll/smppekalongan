@@ -38,8 +38,9 @@
     const { useState, useEffect, useMemo, useRef } = React;
 
     const ADMIN_PASSWORD = "admin123"; 
+    
     // MASUKKAN URL WEB APP GOOGLE SCRIPT ANDA DI SINI
-    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzWN8c0kHxNS1bgPZ7ulnpyu4TAGPAHbffYlSwyKFosE4wHXcNZoO1QnI_Nru8Fgdyy/exec"; 
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwWbhbeji_WZ_MxkepVoUd3O2YmQYe1XZdjreW1fPxXoT9J3ipoo82z9ZyirgTYMfHA/exec"; 
     
     const INDONESIAN_HOLIDAYS = { 
         '01-01': 'Tahun Baru Masehi', '05-01': 'Hari Buruh Internasional', '06-01': 'Hari Lahir Pancasila', 
@@ -65,7 +66,7 @@
         if (result.error) throw new Error(result.error);
         return result;
       } catch (error) {
-        console.error("Gagal terhubung ke Google Script:", error);
+        console.error("Gagal terhubung ke Server:", error);
         if (serverFunction === 'getAppData') return { templates: [], activities: [] };
         throw error;
       }
@@ -96,7 +97,7 @@
         if (activeTab === 'chatbot') chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); 
       }, [chat, isThinking, activeTab]);
 
-      // --- LOGIKA AI YANG BARU (LEBIH AMAN) ---
+      // --- LOGIKA AI (SEKARANG MEMANGGIL GOOGLE SCRIPT) ---
       const handleSend = async (text) => {
         if (!text.trim() || isThinking) return;
         setChat([...chat, { role: 'user', text }]); 
@@ -104,15 +105,15 @@
         setIsThinking(true);
         
         const match = templates.find(t => text.toLowerCase().includes(t.question.toLowerCase()) || t.question.toLowerCase().includes(text.toLowerCase()));
+        
         if (match) { 
           setTimeout(() => { setChat(prev => [...prev, { role: 'bot', text: match.answer }]); setIsThinking(false); }, 600); 
         } else { 
           try {
-            // Memanggil Backend Google untuk mengurus komunikasi AI
-            const response = await runGoogleScript('askAI', text);
-            setChat(prev => [...prev, { role: 'bot', text: response.reply || response }]); 
+            const aiResponse = await runGoogleScript('askAI', text);
+            setChat(prev => [...prev, { role: 'bot', text: aiResponse.reply || aiResponse }]);
           } catch(err) {
-            setChat(prev => [...prev, { role: 'bot', text: "Maaf, koneksi ke server AI terputus." }]); 
+            setChat(prev => [...prev, { role: 'bot', text: "Gagal menyambung ke server sekolah." }]);
           }
           setIsThinking(false); 
         }
@@ -127,6 +128,7 @@
 
       const changeMonth = (offset) => setCurrDate(new Date(currDate.getFullYear(), currDate.getMonth() + offset, 1));
 
+      // Admin Logic
       const [newTemplate, setNewTemplate] = useState({ question: '', answer: '' });
       const [activityTitle, setActivityTitle] = useState('');
       const [selectedDatesForNewActivity, setSelectedDatesForNewActivity] = useState([]);
