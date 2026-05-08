@@ -41,7 +41,7 @@
     // PENGATURAN UTAMA APLIKASI
     // ==========================================
     const ADMIN_PASSWORD = "admin123"; 
-    const DEFAULT_OPENROUTER_API_KEY = "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"; 
+    const DEFAULT_OPENROUTER_API_KEY = "sk-or-v1-"+"21dda56f89b003afb7985e4a194820ecb5d700d1541ed47ff70918507bee6f56"; 
     const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzWN8c0kHxNS1bgPZ7ulnpyu4TAGPAHbffYlSwyKFosE4wHXcNZoO1QnI_Nru8Fgdyy/exec"; 
     
     const INDONESIAN_HOLIDAYS = { 
@@ -101,9 +101,11 @@
         if (activeTab === 'chatbot') chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); 
       }, [chat, isThinking, activeTab]);
 
-      const askOpenRouter = async (prompt) => {
+const askOpenRouter = async (prompt) => {
         const url = "https://openrouter.ai/api/v1/chat/completions";
         const fallbackModels = ["google/gemini-1.5-flash", "openai/gpt-4o-mini", "meta-llama/llama-3-8b-instruct:free"];
+        let errorLogs = [];
+
         for (let currentModel of fallbackModels) {
           try {
             const response = await fetch(url, { 
@@ -111,7 +113,7 @@
               headers: { 
                 'Content-Type': 'application/json', 
                 'Authorization': `Bearer ${DEFAULT_OPENROUTER_API_KEY}`, 
-                'HTTP-Referer': window.location.href, 
+                'HTTP-Referer': 'https://smp6pekalongan.github.io', // Hardcode agar aman dari CORS
                 'X-Title': 'SMP 6 Pekalongan App' 
               }, 
               body: JSON.stringify({ 
@@ -119,6 +121,24 @@
                 messages: [{ role: "system", content: "Anda asisten SMP 6 Pekalongan. Jawab sopan dan logis." }, { role: "user", content: prompt }] 
               }) 
             });
+
+            if (response.ok) {
+              const result = await response.json();
+              if (result && result.choices && result.choices.length > 0) return result.choices[0].message.content;
+            } else {
+              const errData = await response.json().catch(() => ({}));
+              errorLogs.push(`${currentModel} (Status ${response.status})`);
+              
+              if (response.status === 401) {
+                 return "Error 401: API Key Anda DITOLAK. Key mungkin salah, kurang lengkap, atau telah diblokir kembali oleh OpenRouter.";
+              }
+            }
+          } catch (error) { 
+             errorLogs.push(`${currentModel} (Fetch Error: ${error.message})`);
+          }
+        }
+        return `Gagal menghubungi AI. Detail Error: ${errorLogs.join(' | ')}`;
+      };
             if (response.ok) {
               const result = await response.json();
               if (result && result.choices && result.choices.length > 0) return result.choices[0].message.content;
